@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# Download URLs for the components bundled next to CRI-O.
+#
+# Sourced by scripts/bundle/build and scripts/update-digests so that both agree
+# on where a component comes from. Requires curl_retry from scripts/helpers.
+
+declare -A CONMONRS_COMMITS=()
+
+# conmon-rs publishes its binaries per commit, so the tag has to be resolved
+# first. Results are cached because a single run may ask for several
+# architectures of the same tag.
+conmonrs_commit() {
+    local tag=$1 json type sha
+    if [[ ${CONMONRS_COMMITS[$tag]:-} != "" ]]; then
+        echo "${CONMONRS_COMMITS[$tag]}"
+        return
+    fi
+
+    json=$(curl_retry "https://api.github.com/repos/containers/conmon-rs/git/refs/tags/$tag")
+    type=$(jq -r .object.type <<<"$json")
+    sha=$(jq -r .object.sha <<<"$json")
+    if [[ $type == tag ]]; then
+        # Annotated tag, dereference it to get the commit
+        sha=$(curl_retry "https://api.github.com/repos/containers/conmon-rs/git/tags/$sha" | jq -r .object.sha)
+    fi
+
+    # An unexpected API response would otherwise turn into a download URL
+    # containing "null", which fails later on with a confusing 404
+    if [[ $sha == "null" || $sha == "" ]]; then
+        echo "Unable to resolve conmon-rs tag $tag to a commit" >&2
+        return 1
+    fi
+
+    CONMONRS_COMMITS[$tag]=$sha
+    echo "$sha"
+}
+
+component_url() {
+    local name=$1 version=$2 arch=$3 commit
+    case "$name" in
+    cni-plugins)
+        echo "https://github.com/containernetworking/plugins/releases/download/$version/cni-plugins-linux-$arch-$version.tgz"
+        ;;
+    conmon)
+        echo "https://github.com/containers/conmon/releases/download/$version/conmon.$arch"
+        ;;
+    conmon-rs)
+        # Assign separately, a failure inside a command substitution would not
+        # propagate out of the echo
+        commit=$(conmonrs_commit "$version") || return 1
+        echo "https://storage.googleapis.com/cri-o/conmon-rs/$commit/conmonrs.$arch"
+        ;;
+    cri-tools)
+        echo "https://github.com/kubernetes-sigs/cri-tools/releases/download/$version/crictl-$version-linux-$arch.tar.gz"
+        ;;
+    crio-credential-provider)
+        echo "https://github.com/cri-o/crio-credential-provider/releases/download/$version/crio-credential-provider-linux-$arch"
+        ;;
+    crun)
+        echo "https://github.com/containers/crun/releases/download/$version/crun-$version-linux-$arch"
+        ;;
+    runc)
+        echo "https://github.com/opencontainers/runc/releases/download/$version/runc.$arch"
+        ;;
+    *)
+        echo "Unknown component: $name" >&2
+        return 1
+        ;;
+    esac
+}

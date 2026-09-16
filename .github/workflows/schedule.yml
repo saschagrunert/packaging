@@ -3,10 +3,16 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 1 * * *"
+permissions:
+  contents: read
+
 jobs:
   reconcile:
     if: github.ref == 'refs/heads/main' && github.repository == 'cri-o/packaging'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup osc

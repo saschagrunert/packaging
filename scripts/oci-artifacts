@@ -37,7 +37,7 @@ for ARCH in "${ARCHES[@]}"; do
     TARBALL_DIR=cri-o
     TARBALL="$TARBALL_DIR.$ARCH.$ARCHIVE_ID.tar.gz"
 
-    mkdir "$ARCH"
+    mkdir -p "$ARCH"
     mv "$TARBALL" "$ARCH"
     mv "$TARBALL.spdx" "$ARCH/$SBOM_FILE"
     pushd "$ARCH"
@@ -84,7 +84,7 @@ oras manifest index create \
     -a "$ANNOTATION_PROJECT" \
     -a "org.opencontainers.image.created=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
     "$ARTIFACT:$TAG,$COMMIT,$VERSION,$REVISION,$PROJECT_VERSION$TAG_LATEST" \
-    ${ARTIFACTS[@]} | tee -a out
+    ${ARTIFACTS[@]} | tee out
 MANIFEST_REF=$(sed -n 's/Digest: //p' out)
 cosign sign -y "$ARTIFACT@$MANIFEST_REF"
 

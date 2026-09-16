@@ -62,17 +62,17 @@ graph TD
 
 **Jobs:**
 
-| Job                     | Purpose                                                                                                                                                                                                                                                                                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vars`                  | Runs [`scripts/vars`](../scripts/vars) to resolve `COMMIT`, `VERSION`, `PROJECT`, and `PROJECT_TYPE` from the `REVISION` input. The workflow then calls [`scripts/github-job-wait`](../scripts/github-job-wait) to prevent duplicate builds for the same commit.                                                           |
-| `bundles`               | Runs [`scripts/bundle/build`](../scripts/bundle/build) for each architecture. Downloads static binaries from GCS and runtime dependencies (conmon, runc, crun, CNI plugins, crictl, etc.) from their GitHub releases. Produces a tarball, SHA256 checksum, and SPDX SBOM per architecture.                                 |
-| `bundle-test`           | Runs [`scripts/bundle/test`](../scripts/bundle/test) on the amd64 bundle: installs it, starts CRI-O, verifies the binary commit matches, and runs a test pod via crictl.                                                                                                                                                   |
-| `bundles-publish`       | Runs [`scripts/vex`](../scripts/vex) (download VEX from GCS), [`scripts/provenance`](../scripts/provenance) (generate SLSA attestation via tejolote), and [`scripts/sign-artifacts`](../scripts/sign-artifacts) (cosign sign all artifacts). Uploads everything to GCS and writes a `latest-bundle-<revision>.txt` marker. |
-| `oci-artifacts-publish` | Runs [`scripts/oci-artifacts`](../scripts/oci-artifacts) to push multi-architecture OCI image indexes to `ghcr.io/cri-o/bundle` with attached SBOMs, VEX, and provenance. All manifests and attachments are signed with cosign.                                                                                            |
-| `stage`                 | Runs [`scripts/obs`](../scripts/obs) to stage the bundle and [spec file](../templates/latest/cri-o/cri-o.spec) into the OBS `build` project via `krel obs stage`.                                                                                                                                                          |
-| `test-kubernetes`       | Runs [`scripts/test-kubernetes`](../scripts/test-kubernetes) for both deb and rpm: boots a Vagrant VM, installs packages from the OBS project, and validates a Kubernetes cluster.                                                                                                                                         |
-| `test-architectures`    | Runs [`scripts/test-architectures`](../scripts/test-architectures) across a matrix of RPM and DEB based distributions and architectures (amd64, arm64, ppc64le, s390x) using QEMU emulation via Docker buildx.                                                                                                             |
-| `release`               | Runs [`scripts/obs`](../scripts/obs) with `RUN_RELEASE=1` to promote packages from the `build` project to the top-level user-facing project. Only runs after all tests pass.                                                                                                                                               |
+| Job                     | Purpose                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vars`                  | Runs [`scripts/vars`](../scripts/vars) to resolve `COMMIT`, `VERSION`, `PROJECT`, and `PROJECT_TYPE` from the `REVISION` input. Duplicate runs for the same revision are prevented by the workflow concurrency group rather than by polling.                                                                                                                            |
+| `bundles`               | Runs [`scripts/bundle/build`](../scripts/bundle/build) for each architecture. Downloads static binaries from GCS and runtime dependencies (conmon, runc, crun, CNI plugins, crictl, etc.), verifying each one against the digests pinned in [`scripts/bundle/digests`](../scripts/bundle/digests). Produces a tarball, SHA256 checksum, and SPDX SBOM per architecture. |
+| `bundle-test`           | Runs [`scripts/bundle/test`](../scripts/bundle/test) on the amd64 bundle: installs it, starts CRI-O, verifies the binary commit matches, and runs a test pod via crictl.                                                                                                                                                                                                |
+| `bundles-publish`       | Runs [`scripts/vex`](../scripts/vex) (download VEX from GCS), [`scripts/provenance`](../scripts/provenance) (generate SLSA attestation via tejolote), and [`scripts/sign-artifacts`](../scripts/sign-artifacts) (cosign sign all artifacts). Uploads everything to GCS and writes a `latest-bundle-<revision>.txt` marker.                                              |
+| `oci-artifacts-publish` | Runs [`scripts/oci-artifacts`](../scripts/oci-artifacts) to push multi-architecture OCI image indexes to `ghcr.io/cri-o/bundle` with attached SBOMs, VEX, and provenance. All manifests and attachments are signed with cosign.                                                                                                                                         |
+| `stage`                 | Runs [`scripts/obs`](../scripts/obs) to stage the bundle and [spec file](../templates/latest/cri-o/cri-o.spec) into the OBS `build` project via `krel obs stage`.                                                                                                                                                                                                       |
+| `test-kubernetes`       | Runs [`scripts/test-kubernetes`](../scripts/test-kubernetes) for both deb and rpm: boots a Vagrant VM, installs packages from the OBS project for the revision under test, and validates a Kubernetes cluster. Skipped on pull requests, where no packages have been staged.                                                                                            |
+| `test-architectures`    | Runs [`scripts/test-architectures`](../scripts/test-architectures) across a matrix of RPM and DEB based distributions and architectures (amd64, arm64, ppc64le, s390x) using QEMU emulation via Docker buildx. Skipped on pull requests, where no packages have been staged.                                                                                            |
+| `release`               | Runs [`scripts/obs`](../scripts/obs) with `RUN_RELEASE=1` to promote packages from the `build` project to the top-level user-facing project. Only runs after all tests pass.                                                                                                                                                                                            |
 
 ## Reconciliation
 
@@ -98,9 +98,10 @@ manual intervention after a tag is created or a release branch is updated.
 The
 [`test.yml`](https://github.com/cri-o/packaging/blob/main/.github/workflows/test.yml)
 workflow runs on pushes to `main` and on pull requests. It validates code
-quality: shell formatting (shfmt), linting (shellcheck), dependency checks
-(zeitgeist), the [`get`](../get) install script (with and without signature
-verification), markdown TOC (mdtoc), and formatting (prettier).
+quality: shell formatting (shfmt), linting (shellcheck), workflow linting
+(actionlint) and workflow security (zizmor), dependency checks (zeitgeist), the
+[`get`](../get) install script (with and without signature verification),
+markdown TOC (mdtoc), and formatting (prettier).
 
 ## Add Version
 
@@ -109,7 +110,8 @@ The
 workflow is triggered manually to bootstrap infrastructure for a new CRI-O minor
 version. It runs [`scripts/add-version`](../scripts/add-version), which:
 
-1. Infers the next version from the README (or accepts an explicit input).
+1. Infers the next version from the README (or accepts an explicit input) and
+   exposes it via `$GITHUB_OUTPUT` for the pull request step.
 2. Creates four OBS projects by copying metadata from the previous version:
    `stable:v1.y`, `stable:v1.y:build`, `prerelease:v1.y`,
    `prerelease:v1.y:build`.
@@ -138,7 +140,23 @@ The bundle tarball contains: `crio`, `pinns`, `conmon`, `conmon-rs`, `runc`,
 `crun`, `crictl`, `crio-credential-provider`, CNI plugins, man pages, shell
 completions, systemd unit files, and configuration files. Component versions are
 pinned in
-[`templates/latest/cri-o/bundle/versions`](../templates/latest/cri-o/bundle/versions).
+[`templates/latest/cri-o/bundle/versions`](../templates/latest/cri-o/bundle/versions),
+and their SHA256 digests in
+[`scripts/bundle/digests`](../scripts/bundle/digests).
+
+These components are the only build inputs that are not already covered by a
+signature, so every download is checked against its pinned digest and a mismatch
+fails the build. Download URLs live in
+[`scripts/bundle/components`](../scripts/bundle/components), shared by the build
+and by [`scripts/update-digests`](../scripts/update-digests), which regenerates
+the digest file. After changing a version, run:
+
+```bash
+make update-digests
+```
+
+`make verify-dependencies` cross checks both files, so a version bump without a
+digest refresh fails in CI rather than at build time.
 
 ## Signing and Verification
 

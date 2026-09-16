@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")"/helpers
+
+# helpers enables tracing, which would leak the password into the job log
+set +x
 
 OBS_PASSWORD=${OBS_PASSWORD:-}
 if [[ -z "$OBS_PASSWORD" ]]; then
@@ -7,14 +11,7 @@ if [[ -z "$OBS_PASSWORD" ]]; then
     exit 1
 fi
 
-OSC_VERSION=1.27.3
-sudo apt update -y && sudo apt install -y python3-ruamel.yaml
-curl -sSfL --retry 5 --retry-delay 3 \
-    "https://github.com/openSUSE/osc/archive/refs/tags/$OSC_VERSION.tar.gz" -o- | tar xfz -
-pushd "osc-$OSC_VERSION"
-sudo ./setup.py build
-sudo ./setup.py install
-popd
+install_osc
 
 umask 077
 printf "[general]\napiurl = https://api.opensuse.org\n[https://api.opensuse.org]\nuser=cri-o-release-bot\npass=%s\n" "$OBS_PASSWORD" >~/.oscrc

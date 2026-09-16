@@ -7,6 +7,10 @@ on:
           The new version to add (e.g. v1.37).
           Leave empty to auto-detect from the current README.
         type: string
+
+permissions:
+  contents: read
+
 jobs:
   add-version:
     if: github.ref == 'refs/heads/main' && github.repository == 'cri-o/packaging'
@@ -20,24 +24,10 @@ jobs:
         run: scripts/setup-osc
         env:
           OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
-      - run: scripts/add-version "$VERSION"
+      - id: version
+        run: scripts/add-version "$VERSION"
         env:
           VERSION: ${{ inputs.version }}
-      - name: Detect version
-        id: version
-        run: |
-          VERSION="${VERSION_INPUT}"
-          if [ -z "$VERSION" ]; then
-            MINOR=$(grep -oP 'stable-v1\.\K[0-9]+(?=-yellow)' README.md)
-            if [ -z "$MINOR" ]; then
-              echo "::error::Failed to detect version from README"
-              exit 1
-            fi
-            VERSION="v1.$MINOR"
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-        env:
-          VERSION_INPUT: ${{ inputs.version }}
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           commit-message: Add ${{ steps.version.outputs.version }} to documentation

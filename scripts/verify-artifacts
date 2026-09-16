@@ -2,6 +2,8 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")"/helpers
 
+BUNDLE_DIR=${ARCHIVE_PATH:-build/bundle}
+
 IDENTITY="https://github.com/cri-o/packaging/.github/workflows/obs.yml@.*"
 ISSUER=https://token.actions.githubusercontent.com
 
@@ -14,20 +16,9 @@ verify_blob() {
         --bundle "$1.bundle"
 }
 
-for TARBALL in build/bundle/*.tar.gz; do
-    verify_blob "$TARBALL"
-done
-
-for SBOM in build/bundle/*.tar.gz.spdx; do
-    verify_blob "$SBOM"
-done
-
-for VEX in build/bundle/*.openvex.json; do
-    [[ -e "$VEX" ]] || continue
-    verify_blob "$VEX"
-done
-
-for PROVENANCE in build/bundle/*.provenance.json; do
-    [[ -e "$PROVENANCE" ]] || continue
-    verify_blob "$PROVENANCE"
+for ARTIFACT in "$BUNDLE_DIR"/*.tar.gz "$BUNDLE_DIR"/*.tar.gz.sha256sum \
+    "$BUNDLE_DIR"/*.tar.gz.spdx "$BUNDLE_DIR"/*.openvex.json \
+    "$BUNDLE_DIR"/*.provenance.json; do
+    [[ -e "$ARTIFACT" ]] || continue
+    verify_blob "$ARTIFACT"
 done

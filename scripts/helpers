@@ -16,26 +16,44 @@ curl_retry() {
     curl -sSfL --retry 5 --retry-delay 3 "$@"
 }
 
+verify_sha256() {
+    echo "$2  $1" | sha256sum -c -
+}
+
 install_osc() {
     OSC_VERSION=1.27.3
+    OSC_SHA256=72e90ff3d278fc072f640223cf911635eed58c7ecbac4da722205a0ebf83ddf0
     # Because of https://github.com/openSUSE/osc/issues/1819 , ruamel.yaml should be installed separately
     sudo apt update -y && sudo apt install -y python3-ruamel.yaml
-    curl_retry https://github.com/openSUSE/osc/archive/refs/tags/$OSC_VERSION.tar.gz -o- | tar xfz -
-    pushd osc-$OSC_VERSION
+
+    # Build in a temporary directory, unpacking into the current one would
+    # leave the sources behind in the repository checkout
+    local workdir
+    workdir=$(mktemp -d)
+
+    curl_retry "https://github.com/openSUSE/osc/archive/refs/tags/$OSC_VERSION.tar.gz" -o "$workdir/osc.tar.gz"
+    verify_sha256 "$workdir/osc.tar.gz" "$OSC_SHA256"
+    tar xfz "$workdir/osc.tar.gz" -C "$workdir"
+
+    pushd "$workdir/osc-$OSC_VERSION"
     sudo ./setup.py build
     sudo ./setup.py install
     popd
+
+    rm -rf -- "$workdir"
 }
 
 install_krel() {
     KREL_VERSION=v0.21.1
-    install_binary https://github.com/kubernetes/release/releases/download/$KREL_VERSION/krel-amd64-linux krel
+    KREL_SHA256=a136ff2ed00ba4079ffa2a4c9ad3757347ed991e01e6cf03ed9c0c40b5fd84dd
+    install_binary https://github.com/kubernetes/release/releases/download/$KREL_VERSION/krel-amd64-linux krel $KREL_SHA256
 }
 
 install_binary() {
     curl_retry "$1" -o "$2"
+    verify_sha256 "$2" "$3"
     chmod +x "$2"
     sudo cp "$2" /usr/local/bin
     rm "$2"
-    "$2" version
+    /usr/local/bin/"$2" version
 }

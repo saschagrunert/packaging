@@ -7,14 +7,17 @@ ARCH_PPC64LE=ppc64le
 ARCH_S390X=s390x
 ARCH=
 VERSION=
+REQUIRE_VERIFY=0
 GCB_URL=https://storage.googleapis.com/cri-o
 
 usage() {
-    printf "Usage: %s [-a ARCH] [ -t TAG|SHA ] [ -b BUCKET ] [ -h ]\n\n" "$(basename "$0")"
+    printf "Usage: %s [-a ARCH] [ -t TAG|SHA ] [ -b BUCKET ] [ -v ] [ -u ] [ -h ]\n\n" "$(basename "$0")"
     echo "Possible arguments:"
     printf "  -a\tArchitecture to retrieve (defaults to the local system)\n"
     printf "  -t\tVersion tag or full length SHA to be used (defaults to the latest available main)\n"
     printf "  -b\tName of the GCS bucket for downloading artifacts (defaults to 'cri-o')\n"
+    printf "  -v\tRequire signature verification, fail if cosign is not available\n"
+    printf "  -u\tUninstall a previously installed bundle\n"
     printf "  -h\tShow this help message\n"
 }
 
@@ -32,7 +35,7 @@ uninstall() {
 parse_args() {
     echo "Welcome to the CRI-O install script!"
 
-    while getopts 'a:b:t:h:u' OPTION; do
+    while getopts 'a:b:t:vhu' OPTION; do
         case "$OPTION" in
         a)
             ARCH="$OPTARG"
@@ -45,6 +48,10 @@ parse_args() {
         b)
             GCB_URL="https://storage.googleapis.com/$OPTARG"
             echo "Using GCS bucket: gs://$OPTARG"
+            ;;
+        v)
+            REQUIRE_VERIFY=1
+            echo "Requiring signature verification"
             ;;
         h)
             usage
@@ -80,7 +87,7 @@ parse_args() {
 }
 
 verify_requirements() {
-    CMDS=(curl jq tar)
+    CMDS=(curl tar)
     echo "Checking if all commands are available: ${CMDS[*]}"
     for CMD in "${CMDS[@]}"; do
         if ! command -v "$CMD" >/dev/null; then
@@ -88,6 +95,19 @@ verify_requirements() {
             exit 1
         fi
     done
+
+    if [[ $REQUIRE_VERIFY == 1 ]] && ! command -v cosign >/dev/null; then
+        echo "Signature verification required via -v, but cosign is not available"
+        exit 1
+    fi
+
+    if ! command -v cosign >/dev/null &&
+        ! command -v sha256sum >/dev/null &&
+        ! command -v shasum >/dev/null; then
+        echo "None of cosign, sha256sum or shasum is available"
+        echo "Refusing to install a bundle that cannot be verified"
+        exit 1
+    fi
 }
 
 curl_retry() {
@@ -166,10 +186,22 @@ if command -v cosign >/dev/null; then
 
     pushd "$TARBALL_DIR"
 else
-    TARBALL_URL=$BASE_URL/$TARBALL
-    echo "Downloading $TARBALL_URL to $TMPDIR"
-    curl_retry "$TARBALL_URL" | tar xfz - --strip-components=1 -C "$TMPDIR"
-    pushd "$TMPDIR"
+    echo "cosign is not available, falling back to checksum verification"
+    pushd "$TMPDIR" >/dev/null
+
+    echo "Downloading $TARBALL"
+    curl_retry "$BASE_URL/$TARBALL" -o "$TARBALL"
+
+    echo "Verifying checksum of $TARBALL"
+    curl_retry "$BASE_URL/$TARBALL.sha256sum" -o "$TARBALL.sha256sum"
+    if command -v sha256sum >/dev/null; then
+        sha256sum -c "$TARBALL.sha256sum"
+    else
+        shasum -a 256 -c "$TARBALL.sha256sum"
+    fi
+
+    tar xfz "$TARBALL" --strip-components=1
+    rm -f "$TARBALL" "$TARBALL.sha256sum"
 fi
 
 echo Installing CRI-O
@@ -254,9 +286,10 @@ sed -i 's;/usr/bin;'"$DESTDIR$BINDIR"';g' "$DESTDIR$ETC_CRIO_DIR/crio.conf.d/10-
 sed -i 's;/usr/libexec;'"$DESTDIR$LIBEXECDIR"';g' "$DESTDIR$ETC_CRIO_DIR/crio.conf.d/10-crio.conf"
 sed -i 's;/etc/crio;'"$DESTDIR$ETC_CRIO_DIR"';g' "$DESTDIR$ETC_CRIO_DIR/crio.conf.d/10-crio.conf"
 
-touch ~/.crio-install
-cat <<EOF | tee ~/.crio-install
-$DESTDIR$OPT_CNI_BIN_DIR/*
+{
+    # Expand the CNI plugins so that every one of them can be removed again
+    printf '%s\n' "$DESTDIR$OPT_CNI_BIN_DIR"/*
+    cat <<EOF
 $DESTDIR$CNIDIR/10-crio-bridge.conflist.disabled
 $DESTDIR$LIBEXEC_CRIO_DIR/conmon
 $DESTDIR$LIBEXEC_CRIO_DIR/conmonrs
@@ -280,6 +313,7 @@ $DESTDIR$ZSHINSTALLDIR/_crio
 $DESTDIR$SYSTEMDDIR/crio.service
 $DESTDIR$CONTAINERS_REGISTRIES_CONFD_DIR/registries.conf
 EOF
+} | tee ~/.crio-install
 
 if [ -n "$SELINUX" ]; then
     if command -v chcon >/dev/null; then

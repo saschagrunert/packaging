@@ -76,9 +76,10 @@ sed -i 's;/usr/bin;'"$DESTDIR$BINDIR"';g' "$DESTDIR$ETC_CRIO_DIR/crio.conf.d/10-
 sed -i 's;/usr/libexec;'"$DESTDIR$LIBEXECDIR"';g' "$DESTDIR$ETC_CRIO_DIR/crio.conf.d/10-crio.conf"
 sed -i 's;/etc/crio;'"$DESTDIR$ETC_CRIO_DIR"';g' "$DESTDIR$ETC_CRIO_DIR/crio.conf.d/10-crio.conf"
 
-touch ~/.crio-install
-cat <<EOF | tee ~/.crio-install
-$DESTDIR$OPT_CNI_BIN_DIR/*
+{
+    # Expand the CNI plugins so that every one of them can be removed again
+    printf '%s\n' "$DESTDIR$OPT_CNI_BIN_DIR"/*
+    cat <<EOF
 $DESTDIR$CNIDIR/10-crio-bridge.conflist.disabled
 $DESTDIR$LIBEXEC_CRIO_DIR/conmon
 $DESTDIR$LIBEXEC_CRIO_DIR/conmonrs
@@ -102,6 +103,7 @@ $DESTDIR$ZSHINSTALLDIR/_crio
 $DESTDIR$SYSTEMDDIR/crio.service
 $DESTDIR$CONTAINERS_REGISTRIES_CONFD_DIR/registries.conf
 EOF
+} | tee ~/.crio-install
 
 if [ -n "$SELINUX" ]; then
     if command -v chcon >/dev/null; then

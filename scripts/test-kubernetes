@@ -10,7 +10,11 @@ if [[ $TYPE == "" ]]; then
     exit 1
 fi
 
-pushd "$TESTDIR"
-sed -i 's;PROJECT_PATH=.*;'"PROJECT_PATH=$PROJECT_TYPE:/$PROJECT_VERSION"';g' Vagrantfile
+# Consumed by the Vagrantfile and passed on to test/scripts/versions.sh, so
+# that the VM installs the packages built for this revision.
+PROJECT_PATH="$PROJECT_TYPE:/$PROJECT_VERSION"
+export PROJECT_PATH
+echo "Testing packages from project path: $PROJECT_PATH"
 
+pushd "$TESTDIR"
 retry_3 vagrant up
