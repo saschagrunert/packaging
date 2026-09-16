@@ -5,9 +5,9 @@ Name: cri-o
 Version: {{ .RPMVersion }}
 Release: {{ .Revision }}
 Summary: Open Container Initiative-based implementation of Kubernetes Container Runtime Interface
-Packager: Kubernetes Authors <dev@kubernetes.io>
+Packager: CRI-O Authors <dev@kubernetes.io>
 License: Apache-2.0
-URL: https://kubernetes.io
+URL: https://cri-o.io
 Source0: %{name}_%{version}.orig.tar.gz
 Source1: %{name}.rpmlintrc
 BuildRequires: sed
@@ -23,6 +23,7 @@ Recommends: kubernetes-cni
 %else
 BuildRequires: systemd-rpm-macros
 Recommends: kubernetes-cni
+Recommends: container-selinux
 %endif
 
 Requires: iptables
@@ -120,7 +121,6 @@ install -D -m 644 -t %{buildroot}%{_mandir}/man8 %{archive_root}/man/crio.8
 # Binaries
 %{_bindir}/crio
 %{_bindir}/pinns
-%dir %{libexecdir}
 %dir %{libexecdir}/crio
 %{libexecdir}/crio/conmon
 %{libexecdir}/crio/conmonrs

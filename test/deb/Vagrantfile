@@ -20,6 +20,9 @@ Vagrant.configure("2") do |config|
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
   config.vm.provision "file", source: "../scripts", destination: "/tmp/provision"
-  config.vm.provision "install packages", type: "shell", inline: "cd /tmp/provision && ./install-deb.sh", run: "once"
+  # Defaults to prerelease:/main when run outside of CI, see scripts/test-kubernetes
+  project_path = ENV.fetch("PROJECT_PATH", "prerelease:/main")
+
+  config.vm.provision "install packages", type: "shell", env: {"PROJECT_PATH" => project_path}, inline: "cd /tmp/provision && ./install-deb.sh", run: "once"
   config.vm.provision "run tests", type: "shell", inline: "/tmp/provision/test.sh", run: "once"
 end

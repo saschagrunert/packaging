@@ -25,8 +25,11 @@ on:
         type: boolean
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.revision || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 env:
   REVISION: ${{ inputs.revision || 'main' }}
@@ -37,7 +40,7 @@ run-name: publish on OBS / ${{ inputs.revision || 'main' }}
 jobs:
   vars:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 20
     outputs:
       archive_path: ${{ steps.step.outputs.ARCHIVE_PATH }}
       commit: ${{ steps.step.outputs.COMMIT }}
@@ -51,18 +54,15 @@ jobs:
       - id: step
         run: |
           source scripts/vars
-          echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_OUTPUT"
-          echo "COMMIT=$COMMIT" >> "$GITHUB_OUTPUT"
-          echo "GIT_ROOT=$GIT_ROOT" >> "$GITHUB_OUTPUT"
-          echo "PROJECT=$PROJECT" >> "$GITHUB_OUTPUT"
-          echo "PROJECT_TYPE=$PROJECT_TYPE" >> "$GITHUB_OUTPUT"
-          echo "PROJECT_VERSION=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-      - run: scripts/github-job-wait
-        if: ${{ github.event_name != 'pull_request' }}
-        env:
-          COMMIT: ${{ steps.step.outputs.commit }}
-          GH_TOKEN: ${{ github.token }}
+          {
+            echo "ARCHIVE_PATH=$ARCHIVE_PATH"
+            echo "COMMIT=$COMMIT"
+            echo "GIT_ROOT=$GIT_ROOT"
+            echo "PROJECT=$PROJECT"
+            echo "PROJECT_TYPE=$PROJECT_TYPE"
+            echo "PROJECT_VERSION=$PROJECT_VERSION"
+            echo "VERSION=$VERSION"
+          } >> "$GITHUB_OUTPUT"
       - name: COMMIT=${{ steps.step.outputs.commit }}
         run: true
 
@@ -136,6 +136,7 @@ jobs:
       - vars
       - bundle-test
     permissions:
+      contents: read
       id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -150,22 +151,8 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
         with:
-          name: bundles-amd64
-          path: build/bundle
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
-        with:
-          name: bundles-arm64
-          path: build/bundle
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
-        with:
-          name: bundles-ppc64le
-          path: build/bundle
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
-        with:
-          name: bundles-s390x
+          pattern: bundles-*
+          merge-multiple: true
           path: build/bundle
       - run: scripts/vex
         if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
@@ -194,7 +181,9 @@ jobs:
           process_gcloudignore: false
       - name: Create bundle marker
         if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
-        run: find . -type f -iname "cri-o.amd64.*.tar.gz" | sed -n 's;.*amd64.\(.*\).tar.gz;\1;p' > latest-bundle-${{ inputs.revision || 'main' }}.txt
+        # REVISION comes from the workflow env, interpolating the input into the
+        # script itself would allow it to inject shell code
+        run: find . -type f -iname "cri-o.amd64.*.tar.gz" | sed -n 's;.*amd64.\(.*\).tar.gz;\1;p' > "latest-bundle-$REVISION.txt"
       - name: Upload bundle marker
         uses: google-github-actions/upload-cloud-storage@6397bd7208e18d13ba2619ee21b9873edc94427a # v3.0.0
         if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
@@ -246,22 +235,8 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
         with:
-          name: bundles-amd64
-          path: build/bundle
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
-        with:
-          name: bundles-arm64
-          path: build/bundle
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
-        with:
-          name: bundles-ppc64le
-          path: build/bundle
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
-        with:
-          name: bundles-s390x
+          pattern: bundles-*
+          merge-multiple: true
           path: build/bundle
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: ${{ inputs.skip-bundles == false && github.event_name != 'pull_request' }}
@@ -315,9 +290,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo scripts/github-actions-setup
-        if: ${{ inputs.skip-tests == false }}
+        if: ${{ inputs.skip-tests == false && github.event_name != 'pull_request' }}
       - run: sudo -E scripts/test-kubernetes
-        if: ${{ inputs.skip-tests == false }}
+        if: ${{ inputs.skip-tests == false && github.event_name != 'pull_request' }}
         env:
           TYPE: ${{ matrix.type }}
           ARCHIVE_PATH: ${{ needs.vars.outputs.archive_path }}
@@ -362,8 +337,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        if: ${{ inputs.skip-tests == false && github.event_name != 'pull_request' }}
       - uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
-        if: ${{ inputs.skip-tests == false }}
+        if: ${{ inputs.skip-tests == false && github.event_name != 'pull_request' }}
         with:
           timeout_minutes: 30
           max_attempts: 3

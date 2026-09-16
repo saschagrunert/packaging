@@ -306,7 +306,7 @@ but it is also possible to trigger the package creation at a certain point in ti
 `obs` pipeline will:
 
 1. Build a static binary bundle which contains all necessary files.
-   1 Upload the bundle to the CNCF [Google Cloud Storage Bucket][bucket] as well
+1. Upload the bundle to the CNCF [Google Cloud Storage Bucket][bucket] as well
    as the [GitHub container image registry as OCI
    artifacts](https://github.com/cri-o/packaging/pkgs/container/bundle).
 1. Push the bundle and [spec file](templates/latest/cri-o/cri-o.spec) into the
@@ -343,7 +343,22 @@ The script automatically verifies the uploaded sigstore signatures as well, if
 the local system has [`cosign`](https://github.com/sigstore/cosign) available in
 its `$PATH`. The same applies to the [SPDX](https://spdx.org) based bill of
 materials (SBOM), which gets automatically verified if the
-[bom](https://sigs.k8s.io/bom) tool is in `$PATH`.
+[bom](https://sigs.k8s.io/bom) tool is in `$PATH`. Without `cosign`, the script
+falls back to verifying the published SHA256 checksum. Pass `-v` to require
+signature verification and fail if `cosign` is unavailable:
+
+```shell
+curl https://raw.githubusercontent.com/cri-o/packaging/main/get | bash -s -- -v
+```
+
+Those checks cover the downloaded bundle, not the script itself. To review the
+script before running it:
+
+```shell
+curl -fsSLO https://raw.githubusercontent.com/cri-o/packaging/main/get
+# review ./get, then:
+bash get -v
+```
 
 Besides `amd64`, we also support the `arm64`, `ppc64le` and `s390x` bit
 architectures. This can be selected via the script, too:

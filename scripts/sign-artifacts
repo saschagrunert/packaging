@@ -2,32 +2,19 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")"/helpers
 
-for TARBALL in build/bundle/*.tar.gz; do
-    cosign sign-blob -y "$TARBALL" \
-        --bundle "$TARBALL.bundle" \
-        --output-signature "$TARBALL.sig" \
-        --output-certificate "$TARBALL.cert"
-done
+BUNDLE_DIR=${ARCHIVE_PATH:-build/bundle}
 
-for SBOM in build/bundle/*.tar.gz.spdx; do
-    cosign sign-blob -y "$SBOM" \
-        --bundle "$SBOM.bundle" \
-        --output-signature "$SBOM.sig" \
-        --output-certificate "$SBOM.cert"
-done
+sign_blob() {
+    echo "Signing $1"
+    cosign sign-blob -y "$1" \
+        --bundle "$1.bundle" \
+        --output-signature "$1.sig" \
+        --output-certificate "$1.cert"
+}
 
-for VEX in build/bundle/*.openvex.json; do
-    [[ -e "$VEX" ]] || continue
-    cosign sign-blob -y "$VEX" \
-        --bundle "$VEX.bundle" \
-        --output-signature "$VEX.sig" \
-        --output-certificate "$VEX.cert"
-done
-
-for PROVENANCE in build/bundle/*.provenance.json; do
-    [[ -e "$PROVENANCE" ]] || continue
-    cosign sign-blob -y "$PROVENANCE" \
-        --bundle "$PROVENANCE.bundle" \
-        --output-signature "$PROVENANCE.sig" \
-        --output-certificate "$PROVENANCE.cert"
+for ARTIFACT in "$BUNDLE_DIR"/*.tar.gz "$BUNDLE_DIR"/*.tar.gz.sha256sum \
+    "$BUNDLE_DIR"/*.tar.gz.spdx "$BUNDLE_DIR"/*.openvex.json \
+    "$BUNDLE_DIR"/*.provenance.json; do
+    [[ -e "$ARTIFACT" ]] || continue
+    sign_blob "$ARTIFACT"
 done

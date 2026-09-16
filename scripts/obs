@@ -2,9 +2,11 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")"/vars
 
-# Setup a tmp work dir
+# Setup a tmp work dir, plus a separate one for the patched templates so that
+# they stay out of the krel workspace
 TMPDIR="$(mktemp -d)"
-trap 'sudo rm -rf -- "$TMPDIR"' EXIT
+TEMPLATE_WORKDIR="$(mktemp -d)"
+trap 'sudo rm -rf -- "$TMPDIR" "$TEMPLATE_WORKDIR"' EXIT
 pushd "$TMPDIR"
 
 # Package options
@@ -15,9 +17,14 @@ RUN_RELEASE=${RUN_RELEASE:-0}
 export OBS_USERNAME=cri-o-release-bot
 
 obs_stage() {
-    # Patch the package metadata to download the latest commit for non tags
+    # Patch the package metadata to download the latest commit for non tags.
+    # Work on a copy, patching the checked out template would leave the tree
+    # dirty for everything running after this.
+    local template_dir="$TEMPLATE_WORKDIR/latest"
+    cp -r "$TEMPLATE_DIR" "$template_dir"
+
     if ! [[ "$REVISION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        sed -i 's;gs://cri-o/artifacts/cri-o.{{ .Architecture }}.v{{ .PackageVersion }}.tar.gz;gs://cri-o/artifacts/cri-o.{{ .Architecture }}.'"$COMMIT"'.tar.gz;g' "$TEMPLATE_DIR/metadata.yaml"
+        sed -i 's;gs://cri-o/artifacts/cri-o.{{ .Architecture }}.v{{ .PackageVersion }}.tar.gz;gs://cri-o/artifacts/cri-o.{{ .Architecture }}.'"$COMMIT"'.tar.gz;g' "$template_dir/metadata.yaml"
     fi
     echo "Staging https://build.opensuse.org/package/show/$PROJECT/$PACKAGE"
 
@@ -25,7 +32,7 @@ obs_stage() {
     krel obs stage \
         --log-level debug \
         --workspace . \
-        --template-dir "$TEMPLATE_DIR" \
+        --template-dir "$template_dir" \
         --packages "$PACKAGE" \
         --project "$PROJECT" \
         --version "$VERSION" \

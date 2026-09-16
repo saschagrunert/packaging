@@ -7,6 +7,12 @@ TEMPLATES_DIR="$GIT_ROOT/templates/latest/cri-o/bundle"
 # shellcheck source=../../templates/latest/cri-o/bundle/versions
 source "$TEMPLATES_DIR/versions"
 
+# shellcheck source=components
+source "$(dirname "${BASH_SOURCE[0]}")"/components
+
+# shellcheck source=digests
+source "$(dirname "${BASH_SOURCE[0]}")"/digests
+
 ARCH_AMD64=amd64
 ARCH_ARM64=arm64
 ARCH_PPC64LE=ppc64le
@@ -86,45 +92,68 @@ cp "$TEMPLATES_DIR/install" "$TMPDIR/install"
 sed -i "s/-amd64/-$ARCH/" "$TMPDIR/install"
 cp "$TMPDIR_CRIO/LICENSE" "$TMPDIR"
 
-curl_to() {
-    curl_retry -sSfL -o "$1" "$2"
+# Verify a downloaded component against its pinned digest. Bundled components
+# are the only inputs that are not already covered by a signature, so a
+# mismatch has to be fatal.
+verify_digest() {
+    local name=$1 version=$2 path=$3 key expected actual
+    key="$name-$version-$ARCH"
+    expected=${DIGESTS[$key]:-}
+
+    if [[ $expected == "" ]]; then
+        echo "No pinned digest for $key"
+        echo "Run scripts/update-digests after changing component versions"
+        exit 1
+    fi
+
+    actual=$(sha256sum "$path" | cut -d' ' -f1)
+    if [[ $actual != "$expected" ]]; then
+        echo "Digest mismatch for $key"
+        echo "  expected: $expected"
+        echo "  actual:   $actual"
+        exit 1
+    fi
+
+    echo "Verified digest for $key"
+}
+
+download_component() {
+    local name=$1 dest=$2 version url
+    version=${VERSIONS[$name]}
+    url=$(component_url "$name" "$version" "$ARCH")
+    curl_retry "$url" -o "$dest"
+    verify_digest "$name" "$version" "$dest"
 }
 
 TMP_BIN=$TMPDIR/bin
 
 # conmon
-curl_to "$TMP_BIN/conmon" \
-    "https://github.com/containers/conmon/releases/download/${VERSIONS["conmon"]}/conmon.$ARCH"
+download_component conmon "$TMP_BIN/conmon"
 chmod +x "$TMP_BIN/conmon"
 
 # conmon-rs
-curl_retry "https://raw.githubusercontent.com/containers/conmon-rs/${VERSIONS["conmon-rs"]}/scripts/get" |
-    bash -s -- -n -a "$ARCH" -l "${VERSIONS["conmon-rs"]}" -o "$TMP_BIN/conmonrs"
+download_component conmon-rs "$TMP_BIN/conmonrs"
+chmod +x "$TMP_BIN/conmonrs"
 
 # runc
-curl_to "$TMP_BIN/runc" \
-    "https://github.com/opencontainers/runc/releases/download/${VERSIONS["runc"]}/runc.$ARCH"
+download_component runc "$TMP_BIN/runc"
 chmod +x "$TMP_BIN/runc"
 
 # crun
-curl_to "$TMP_BIN/crun" \
-    "https://github.com/containers/crun/releases/download/${VERSIONS["crun"]}/crun-${VERSIONS["crun"]}-linux-$ARCH"
+download_component crun "$TMP_BIN/crun"
 chmod +x "$TMP_BIN/crun"
 
 # CNI plugins
 mkdir -p "$TMPDIR/cni-plugins"
-curl_to - \
-    "https://github.com/containernetworking/plugins/releases/download/${VERSIONS["cni-plugins"]}/cni-plugins-linux-$ARCH-${VERSIONS["cni-plugins"]}.tgz" |
-    tar xfz - -C "$TMPDIR/cni-plugins"
+download_component cni-plugins "$TMPDIR_CRIO/cni-plugins.tgz"
+tar xfz "$TMPDIR_CRIO/cni-plugins.tgz" -C "$TMPDIR/cni-plugins"
 
 # crictl
-curl_to - \
-    "https://github.com/kubernetes-sigs/cri-tools/releases/download/${VERSIONS["cri-tools"]}/crictl-${VERSIONS["cri-tools"]}-linux-$ARCH.tar.gz" |
-    tar xfz - -C "$TMP_BIN"
+download_component cri-tools "$TMPDIR_CRIO/crictl.tar.gz"
+tar xfz "$TMPDIR_CRIO/crictl.tar.gz" -C "$TMP_BIN"
 
 # crio-credential-provider
-curl_to "$TMP_BIN/crio-credential-provider" \
-    "https://github.com/cri-o/crio-credential-provider/releases/download/${VERSIONS["crio-credential-provider"]}/crio-credential-provider-linux-$ARCH"
+download_component crio-credential-provider "$TMP_BIN/crio-credential-provider"
 chmod +x "$TMP_BIN/crio-credential-provider"
 
 # Check the architectures of the binaries
@@ -180,14 +209,14 @@ bom validate -e "$SPDX_PATH" -d "$CRIODIR"
 pushd "$TMPDIR"
 export DESTDIR=test/
 ./install
-EXP_CNT=74
-if ! command -v runc; then
-    EXP_CNT=$((EXP_CNT + 1))
-fi
 
-ACT_CNT=$(find test | wc -l)
-if [[ "$EXP_CNT" != "$ACT_CNT" ]]; then
-    echo "install file count does not match, expected: $EXP_CNT, actual: $ACT_CNT"
+# The installer records every file it writes so that it can uninstall them
+# again. Both views have to agree, otherwise uninstalling leaves files behind.
+RECORDED=$(tr -s / <~/.crio-install | sort)
+INSTALLED=$(find test -type f | tr -s / | sort)
+if [[ "$RECORDED" != "$INSTALLED" ]]; then
+    echo "installed files do not match the ones recorded by the installer"
+    diff <(echo "$RECORDED") <(echo "$INSTALLED") || true
     exit 1
 fi
 popd

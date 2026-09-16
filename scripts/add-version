@@ -105,3 +105,7 @@ if [[ ${SKIP_OBS:-} != "1" ]]; then
 fi
 
 update_readme
+
+if [[ ${GITHUB_OUTPUT:-} != "" ]]; then
+    echo "version=$NEW_VERSION" >>"$GITHUB_OUTPUT"
+fi

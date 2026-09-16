@@ -4,15 +4,32 @@ ZEITGEIST_VERSION = v0.8.0
 SHFMT_VERSION := v3.13.1
 SHELLCHECK_VERSION := v0.11.0
 MDTOC_VERSION := v1.4.0
+ACTIONLINT_VERSION := v1.7.12
+ZIZMOR_VERSION := v1.30.1
+
+# Pinned so that a compromised or swapped release cannot silently change the
+# tooling used to verify this repository.
+ZEITGEIST_SHA256 := 3899d666a6dc8ccfa99bfbb468ee282de56925c6b58a4c5937c763b14a7cae35
+SHFMT_SHA256 := fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1
+SHELLCHECK_SHA256 := 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+MDTOC_SHA256 := 2c13e079505fdc34d814a9822813fc7e2cc5a00d1844683c77b531aa08f6986a
+ACTIONLINT_SHA256 := 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+ZIZMOR_SHA256 := e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
 
 BUILD_DIR := build
 ZEITGEIST := $(BUILD_DIR)/zeitgeist
 SHFMT := $(BUILD_DIR)/shfmt
 SHELLCHECK := $(BUILD_DIR)/shellcheck
 MDTOC := $(BUILD_DIR)/mdtoc
+ACTIONLINT := $(BUILD_DIR)/actionlint
+ZIZMOR := $(BUILD_DIR)/zizmor
 
 define curl_to
     curl -sSfL --retry 5 --retry-delay 3 "$(1)" -o $(2)
+endef
+
+define verify_sha256
+    echo "$(2)  $(1)" | sha256sum -c -
 endef
 
 $(BUILD_DIR):
@@ -22,26 +39,49 @@ $(BUILD_DIR):
 clean:
 	rm -rf $(BUILD_DIR)
 
+# The remote flavour is required to resolve upstream versions, it still
+# supports --local-only for the offline check.
 $(ZEITGEIST): $(BUILD_DIR)
-	$(call curl_to,https://github.com/kubernetes-sigs/zeitgeist/releases/download/$(ZEITGEIST_VERSION)/zeitgeist-amd64-linux,$(ZEITGEIST))
+	$(call curl_to,https://github.com/kubernetes-sigs/zeitgeist/releases/download/$(ZEITGEIST_VERSION)/zeitgeist-remote-amd64-linux,$(ZEITGEIST))
+	$(call verify_sha256,$(ZEITGEIST),$(ZEITGEIST_SHA256))
 	chmod +x $(ZEITGEIST)
 
 $(SHFMT): $(BUILD_DIR)
 	$(call curl_to,https://github.com/mvdan/sh/releases/download/$(SHFMT_VERSION)/shfmt_$(SHFMT_VERSION)_linux_amd64,$(SHFMT))
+	$(call verify_sha256,$(SHFMT),$(SHFMT_SHA256))
 	chmod +x $(SHFMT)
 
 $(SHELLCHECK): $(BUILD_DIR)
-	$(call curl_to,https://github.com/koalaman/shellcheck/releases/download/$(SHELLCHECK_VERSION)/shellcheck-$(SHELLCHECK_VERSION).linux.x86_64.tar.xz,-) \
-		| tar xfJ - -C $(BUILD_DIR) --strip 1 shellcheck-$(SHELLCHECK_VERSION)/shellcheck
+	$(call curl_to,https://github.com/koalaman/shellcheck/releases/download/$(SHELLCHECK_VERSION)/shellcheck-$(SHELLCHECK_VERSION).linux.x86_64.tar.xz,$(BUILD_DIR)/shellcheck.tar.xz)
+	$(call verify_sha256,$(BUILD_DIR)/shellcheck.tar.xz,$(SHELLCHECK_SHA256))
+	tar xfJ $(BUILD_DIR)/shellcheck.tar.xz -C $(BUILD_DIR) --strip 1 shellcheck-$(SHELLCHECK_VERSION)/shellcheck
+	rm -f $(BUILD_DIR)/shellcheck.tar.xz
 
 $(MDTOC): $(BUILD_DIR)
 	$(call curl_to,https://storage.googleapis.com/k8s-artifacts-sig-release/kubernetes-sigs/mdtoc/$(MDTOC_VERSION)/mdtoc-amd64-linux,$(MDTOC))
+	$(call verify_sha256,$(MDTOC),$(MDTOC_SHA256))
 	chmod +x $(MDTOC)
+
+$(ACTIONLINT): $(BUILD_DIR)
+	$(call curl_to,https://github.com/rhysd/actionlint/releases/download/$(ACTIONLINT_VERSION)/actionlint_$(patsubst v%,%,$(ACTIONLINT_VERSION))_linux_amd64.tar.gz,$(BUILD_DIR)/actionlint.tar.gz)
+	$(call verify_sha256,$(BUILD_DIR)/actionlint.tar.gz,$(ACTIONLINT_SHA256))
+	tar xfz $(BUILD_DIR)/actionlint.tar.gz -C $(BUILD_DIR) actionlint
+	rm -f $(BUILD_DIR)/actionlint.tar.gz
+
+$(ZIZMOR): $(BUILD_DIR)
+	$(call curl_to,https://github.com/zizmorcore/zizmor/releases/download/$(ZIZMOR_VERSION)/zizmor-x86_64-unknown-linux-gnu.tar.gz,$(BUILD_DIR)/zizmor.tar.gz)
+	$(call verify_sha256,$(BUILD_DIR)/zizmor.tar.gz,$(ZIZMOR_SHA256))
+	tar xfz $(BUILD_DIR)/zizmor.tar.gz -C $(BUILD_DIR) zizmor
+	rm -f $(BUILD_DIR)/zizmor.tar.gz
 
 .PHONY: get-script
 get-script:
 	sed -i '/# INCLUDE/q' get
 	tail -n+2 templates/latest/cri-o/bundle/install >> get
+
+.PHONY: update-digests
+update-digests: ## Refresh the pinned digests of the bundled components
+	scripts/update-digests
 
 .PHONY: prettier
 prettier:
@@ -49,20 +89,38 @@ prettier:
 		'npm install -g prettier && prettier -w .'
 
 .PHONY: verify-dependencies
-verify-dependencies: $(BUILD_DIR)/zeitgeist ## Verify external dependencies
+verify-dependencies: $(ZEITGEIST) ## Verify external dependencies
 	$(ZEITGEIST) validate --local-only --base-path . --config dependencies.yaml
+
+.PHONY: check-dependency-updates
+check-dependency-updates: $(ZEITGEIST) ## Report dependencies that are outdated upstream
+	$(ZEITGEIST) validate --base-path . --config dependencies.yaml
 
 .PHONY: shellfiles
 shellfiles: $(SHFMT)
 	$(eval SHELLFILES=$(shell $(SHFMT) -f .))
 
+.PHONY: shfmt
+shfmt: shellfiles
+	$(SHFMT) -ln bash -w -i 4 $(SHELLFILES)
+
 .PHONY: verify-shfmt
 verify-shfmt: shellfiles
-	$(SHFMT) -ln bash -w -i 4 -d $(SHELLFILES)
+	$(SHFMT) -ln bash -i 4 -d $(SHELLFILES)
 
 .PHONY: verify-shellcheck
 verify-shellcheck: shellfiles $(SHELLCHECK)
 	$(SHELLCHECK) -P scripts -P scripts/bundle -x $(SHELLFILES)
+
+.PHONY: verify-actionlint
+verify-actionlint: $(ACTIONLINT)
+	$(ACTIONLINT) -color
+
+# Low confidence findings are mostly persist-credentials hints on checkouts that
+# never push, they would drown out the actionable ones.
+.PHONY: verify-zizmor
+verify-zizmor: $(ZIZMOR)
+	$(ZIZMOR) --persona=regular --min-confidence=medium .github/workflows
 
 .PHONY: verify-get-script
 verify-get-script: get-script
