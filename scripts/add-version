@@ -2,59 +2,187 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")"/helpers
 
+# Bootstraps the OBS projects and README entries for a new CRI-O minor version
+# by copying the metadata of the previous one. Safe to re-run: existing OBS
+# projects and packages are never modified and README entries are only added
+# once.
+#
+# Usage: scripts/add-version [v1.y]
+#
+# Environment:
+#   DRY_RUN=1   print the metadata which would be written, change nothing
+#   SKIP_OBS=1  only update the README
+
 GIT_ROOT=$(git rev-parse --show-toplevel)
 README="$GIT_ROOT/README.md"
 
 PROJECT_PREFIX=isv:cri-o
+DRY_RUN=${DRY_RUN:-}
+SKIP_OBS=${SKIP_OBS:-}
+
+WORKDIR=$(mktemp -d)
+trap 'rm -rf -- "$WORKDIR"' EXIT
 
 infer_versions() {
-    PREV_MINOR=$(grep -oP 'stable-v1\.\K[0-9]+(?=-yellow)' "$README")
-    PREV_VERSION="v1.$PREV_MINOR"
-    NEW_VERSION="v1.$((PREV_MINOR + 1))"
-    echo "Previous version: $PREV_VERSION"
-    echo "New version: $NEW_VERSION"
+    local prev_minor
+    prev_minor=$(grep -oP 'stable-v1\.\K[0-9]+(?=-yellow)' "$README")
+    PREV_VERSION="v1.$prev_minor"
+    NEW_VERSION="v1.$((prev_minor + 1))"
+}
+
+set_versions() {
+    NEW_VERSION=$1
+    if [[ ! $NEW_VERSION =~ ^v ]]; then
+        NEW_VERSION="v$NEW_VERSION"
+    fi
+    if [[ ! $NEW_VERSION =~ ^v1\.([1-9][0-9]*)$ ]]; then
+        echo "Invalid version $NEW_VERSION, expected format v1.y" >&2
+        exit 1
+    fi
+    PREV_VERSION="v1.$((BASH_REMATCH[1] - 1))"
+}
+
+# Returns 0 if the OBS object exists and 1 if it does not. Any other error
+# aborts, so that failing requests never lead to overwriting existing objects.
+meta_exists() {
+    local out
+    if out=$(osc meta "$@" 2>&1); then
+        return 0
+    fi
+    if grep -q "HTTP Error 404" <<<"$out"; then
+        return 1
+    fi
+    echo "Failed to query OBS metadata for $*:" >&2
+    echo "$out" >&2
+    exit 1
+}
+
+prj_exists() {
+    meta_exists prj "$1"
+}
+
+pkg_exists() {
+    meta_exists pkg "$1" "$2"
+}
+
+# Rewrite the metadata of the previous version for the new one. Only version
+# references are touched, which avoids accidental replacements of other
+# numbers like distribution versions.
+rewrite_meta() {
+    local file=$1
+    local pattern='(?<![[:alnum:].])(v|release-)\Q'"${PREV_VERSION#v}"'\E(?![0-9])'
+
+    perl -pi -e "s/$pattern/\${1}${NEW_VERSION#v}/g" "$file"
+
+    if grep -qP "$pattern" "$file"; then
+        echo "Leftover $PREV_VERSION references in rewritten metadata:" >&2
+        cat "$file" >&2
+        exit 1
+    fi
+}
+
+apply_meta() {
+    local file=$1
+    shift
+    if [[ $DRY_RUN == 1 ]]; then
+        echo "[dry-run] osc meta $* -F $file:"
+        cat "$file"
+        return
+    fi
+    osc meta "$@" -F "$file"
 }
 
 create_obs_project() {
-    local src=$1 dst=$2
-    echo "Creating OBS project: $dst (from $src)"
+    local src=$1 dst=$2 file="$WORKDIR/prj.xml"
 
-    local tmpfile
-    tmpfile=$(mktemp)
+    if prj_exists "$dst"; then
+        echo "OBS project $dst already exists, skipping"
+        return
+    fi
+    if ! prj_exists "$src"; then
+        echo "Source OBS project $src does not exist" >&2
+        exit 1
+    fi
 
-    osc meta prj "$src" >"$tmpfile"
-    sed -i "s|$src|$dst|g" "$tmpfile"
-    sed -i "s|${PREV_VERSION#v}|${NEW_VERSION#v}|g" "$tmpfile"
-    osc meta prj "$dst" -F "$tmpfile"
-    rm -f "$tmpfile"
+    echo "Creating OBS project $dst from $src"
+    osc meta prj "$src" >"$file"
+    rewrite_meta "$file"
+    if ! grep -q "<project name=\"$dst\"" "$file"; then
+        echo "Rewritten metadata does not define project $dst" >&2
+        exit 1
+    fi
+    apply_meta "$file" prj "$dst"
 }
 
 create_obs_package() {
-    local src_project=$1 dst_project=$2 package=$3
-    echo "Creating OBS package: $dst_project/$package (from $src_project/$package)"
+    local src=$1 dst=$2 pkg=$3 file="$WORKDIR/pkg.xml"
 
-    local tmpfile
-    tmpfile=$(mktemp)
+    if pkg_exists "$dst" "$pkg"; then
+        echo "OBS package $dst/$pkg already exists, skipping"
+        return
+    fi
 
-    osc meta pkg "$src_project" "$package" >"$tmpfile"
-    sed -i "s|$src_project|$dst_project|g" "$tmpfile"
-    osc meta pkg "$dst_project" "$package" -F "$tmpfile"
-    rm -f "$tmpfile"
+    echo "Creating OBS package $dst/$pkg from $src/$pkg"
+    osc meta pkg "$src" "$pkg" >"$file"
+    rewrite_meta "$file"
+    if ! grep -q "<package name=\"$pkg\" project=\"$dst\"" "$file"; then
+        echo "Rewritten metadata does not define package $dst/$pkg" >&2
+        exit 1
+    fi
+    apply_meta "$file" pkg "$dst" "$pkg"
 }
 
 create_obs_projects() {
-    create_obs_project "$PROJECT_PREFIX:stable:$PREV_VERSION" "$PROJECT_PREFIX:stable:$NEW_VERSION"
-    create_obs_project "$PROJECT_PREFIX:stable:$PREV_VERSION:build" "$PROJECT_PREFIX:stable:$NEW_VERSION:build"
-    create_obs_project "$PROJECT_PREFIX:prerelease:$PREV_VERSION" "$PROJECT_PREFIX:prerelease:$NEW_VERSION"
-    create_obs_project "$PROJECT_PREFIX:prerelease:$PREV_VERSION:build" "$PROJECT_PREFIX:prerelease:$NEW_VERSION:build"
+    local kind src dst
+    for kind in stable prerelease; do
+        src="$PROJECT_PREFIX:$kind:$PREV_VERSION"
+        dst="$PROJECT_PREFIX:$kind:$NEW_VERSION"
 
-    create_obs_package "$PROJECT_PREFIX:stable:$PREV_VERSION:build" "$PROJECT_PREFIX:stable:$NEW_VERSION:build" cri-o
-    create_obs_package "$PROJECT_PREFIX:prerelease:$PREV_VERSION:build" "$PROJECT_PREFIX:prerelease:$NEW_VERSION:build" cri-o
+        # The release project has to exist before the builder references it
+        # as release target.
+        create_obs_project "$src" "$dst"
+        create_obs_project "$src:build" "$dst:build"
+        create_obs_package "$src:build" "$dst:build" cri-o
+    done
+
+    if [[ $DRY_RUN == 1 ]]; then
+        return
+    fi
+
+    for kind in stable prerelease; do
+        dst="$PROJECT_PREFIX:$kind:$NEW_VERSION"
+        if ! prj_exists "$dst" || ! prj_exists "$dst:build" || ! pkg_exists "$dst:build" cri-o; then
+            echo "Verification of $dst failed" >&2
+            exit 1
+        fi
+    done
+    echo "OBS projects for $NEW_VERSION are ready"
+}
+
+readme_has_version() {
+    grep -q "stable:$NEW_VERSION" "$README"
+}
+
+# Runs before any OBS changes, so that a version which does not follow the
+# latest one in the README does not leave OBS projects behind.
+verify_readme() {
+    if ! readme_has_version && ! grep -q "stable-$PREV_VERSION-yellow" "$README"; then
+        echo "README does not mark $PREV_VERSION as latest stable version" >&2
+        exit 1
+    fi
 }
 
 update_readme() {
-    echo "Updating README.md for $NEW_VERSION"
+    if readme_has_version; then
+        echo "README already contains $NEW_VERSION, skipping"
+        return
+    fi
+    if [[ $DRY_RUN == 1 ]]; then
+        echo "[dry-run] Would update README for $NEW_VERSION"
+        return
+    fi
 
+    echo "Updating README for $NEW_VERSION"
     local new_minor=${NEW_VERSION#v1.}
 
     # Add stable project entries after the umbrella line
@@ -77,30 +205,17 @@ update_readme() {
     # Add new prerelease badge after the main badge
     sed -i "/prerelease-main-blue/a\\
 [![release-1.$new_minor](https://img.shields.io/badge/prerelease-release--1.$new_minor-blue?logo=git\&logoColor=white)](https://build.opensuse.org/project/show/isv:cri-o:prerelease:$NEW_VERSION)" "$README"
-
-    echo "README.md updated"
 }
 
 if [[ ${1:-} != "" ]]; then
-    PREV_VERSION=""
-    NEW_VERSION=$1
-    if [[ ! $NEW_VERSION =~ ^v ]]; then
-        NEW_VERSION="v$NEW_VERSION"
-    fi
-    # Derive the previous version from the new one
-    local_minor=${NEW_VERSION#v1.}
-    PREV_VERSION="v1.$((local_minor - 1))"
-    echo "Using provided version: $NEW_VERSION (previous: $PREV_VERSION)"
+    set_versions "$1"
 else
     infer_versions
 fi
+echo "Adding $NEW_VERSION (previous: $PREV_VERSION)"
+verify_readme
 
-if grep -q "stable:$NEW_VERSION" "$README"; then
-    echo "Version $NEW_VERSION already exists in README"
-    exit 1
-fi
-
-if [[ ${SKIP_OBS:-} != "1" ]]; then
+if [[ $SKIP_OBS != 1 ]]; then
     create_obs_projects
 fi
 

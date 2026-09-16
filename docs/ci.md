@@ -116,10 +116,19 @@ to bootstrap infrastructure for a new CRI-O minor version. It runs
    exposes it via `$GITHUB_OUTPUT` for the pull request step.
 2. Creates four OBS projects by copying metadata from the previous version:
    `stable:v1.y`, `stable:v1.y:build`, `prerelease:v1.y`,
-   `prerelease:v1.y:build`.
+   `prerelease:v1.y:build`. Only version references are rewritten, and the
+   result is checked before it gets applied.
 3. Creates the `cri-o` package in both `build` projects.
 4. Updates the README with new project entries and badges.
 5. Opens a pull request with the changes.
+
+The script is safe to re-run: existing OBS projects and packages are skipped
+instead of being modified, and the README is only updated once. It can also be
+run locally with a configured `osc`, for example to preview the changes:
+
+```bash
+DRY_RUN=1 scripts/add-version v1.38
+```
 
 ## Artifacts
 

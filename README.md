@@ -62,6 +62,8 @@ This project contains a bunch of other [subprojects](https://build.opensuse.org/
 > [CRI-O releases](https://github.com/cri-o/cri-o/releases) for the latest stable release.
 
 - [`isv:cri-o:stable`](https://build.opensuse.org/project/show/isv:cri-o:stable): Stable Packages (Umbrella)
+  - [`isv:cri-o:stable:v1.38`](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.38): `v1.38.z` tags (Stable)
+    - [`isv:cri-o:stable:v1.38:build`](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.38:build): `v1.38.z` tags (Builder)
   - [`isv:cri-o:stable:v1.37`](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.37): `v1.37.z` tags (Stable)
     - [`isv:cri-o:stable:v1.37:build`](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.37:build): `v1.37.z` tags (Builder)
   - [`isv:cri-o:stable:v1.36`](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.36): `v1.36.z` tags (Stable)
@@ -94,6 +96,8 @@ This project contains a bunch of other [subprojects](https://build.opensuse.org/
 - [`isv:cri-o:prerelease`](https://build.opensuse.org/project/show/isv:cri-o:prerelease): Prerelease Packages (Umbrella)
   - [`isv:cri-o:prerelease:main`](https://build.opensuse.org/project/show/isv:cri-o:prerelease:main): [`main`](https://github.com/cri-o/cri-o/commits/main) branch (Prerelease)
     - [`isv:cri-o:prerelease:main:build`](https://build.opensuse.org/project/show/isv:cri-o:prerelease:main:build): [`main`](https://github.com/cri-o/cri-o/commits/main) branch (Builder)
+  - [`isv:cri-o:prerelease:v1.38`](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.38): [`release-1.38`](https://github.com/cri-o/cri-o/commits/release-1.38) branch (Prerelease)
+    - [`isv:cri-o:prerelease:v1.38:build`](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.38:build): [`release-1.38`](https://github.com/cri-o/cri-o/commits/release-1.38) branch (Builder)
   - [`isv:cri-o:prerelease:v1.37`](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.37): [`release-1.37`](https://github.com/cri-o/cri-o/commits/release-1.37) branch (Prerelease)
     - [`isv:cri-o:prerelease:v1.37:build`](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.37:build): [`release-1.37`](https://github.com/cri-o/cri-o/commits/release-1.37) branch (Builder)
   - [`isv:cri-o:prerelease:v1.36`](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.36): [`release-1.36`](https://github.com/cri-o/cri-o/commits/release-1.36) branch (Prerelease)
@@ -141,7 +145,8 @@ All packages are based on the static binary bundles provided by the CRI-O CI.
 
 #### Stable
 
-[![v1.37](https://img.shields.io/badge/stable-v1.37-yellow?logo=github)](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.37)
+[![v1.38](https://img.shields.io/badge/stable-v1.38-yellow?logo=github)](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.38)
+[![v1.37](https://img.shields.io/badge/stable-v1.37-brightgreen?logo=github)](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.37)
 [![v1.36](https://img.shields.io/badge/stable-v1.36-brightgreen?logo=github)](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.36)
 [![v1.35](https://img.shields.io/badge/stable-v1.35-brightgreen?logo=github)](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.35)
 [![v1.34](https://img.shields.io/badge/stable-v1.34-brightgreen?logo=github)](https://build.opensuse.org/project/show/isv:cri-o:stable:v1.34)
@@ -161,6 +166,7 @@ All packages are based on the static binary bundles provided by the CRI-O CI.
 #### Prerelease
 
 [![main](https://img.shields.io/badge/prerelease-main-blue?logo=git&logoColor=white)](https://build.opensuse.org/project/show/isv:cri-o:prerelease:main)
+[![release-1.38](https://img.shields.io/badge/prerelease-release--1.38-blue?logo=git&logoColor=white)](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.38)
 [![release-1.37](https://img.shields.io/badge/prerelease-release--1.37-blue?logo=git&logoColor=white)](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.37)
 [![release-1.36](https://img.shields.io/badge/prerelease-release--1.36-blue?logo=git&logoColor=white)](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.36)
 [![release-1.35](https://img.shields.io/badge/prerelease-release--1.35-blue?logo=git&logoColor=white)](https://build.opensuse.org/project/show/isv:cri-o:prerelease:v1.35)
