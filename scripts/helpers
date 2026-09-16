@@ -40,7 +40,8 @@ install_osc() {
     sudo ./setup.py install
     popd
 
-    rm -rf -- "$workdir"
+    # The build and install steps leave root owned files behind
+    sudo rm -rf -- "$workdir"
 }
 
 install_krel() {
