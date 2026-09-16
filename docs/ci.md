@@ -19,6 +19,7 @@ GitHub releases), see the
   - [Verifying artifacts](#verifying-artifacts)
 - [Version Resolution](#version-resolution)
 - [Release Lifecycle](#release-lifecycle)
+- [Mark EOL](#mark-eol)
 - [OBS Project Structure](#obs-project-structure)
 
 <!-- /toc -->
@@ -107,8 +108,9 @@ markdown TOC (mdtoc), and formatting (prettier).
 
 The
 [`add-version.yml`](https://github.com/cri-o/packaging/blob/main/.github/workflows/add-version.yml)
-workflow is triggered manually to bootstrap infrastructure for a new CRI-O minor
-version. It runs [`scripts/add-version`](../scripts/add-version), which:
+workflow is [triggered manually](https://github.com/cri-o/packaging/actions/workflows/add-version.yml)
+to bootstrap infrastructure for a new CRI-O minor version. It runs
+[`scripts/add-version`](../scripts/add-version), which:
 
 1. Infers the next version from the README (or accepts an explicit input) and
    exposes it via `$GITHUB_OUTPUT` for the pull request step.
@@ -295,6 +297,30 @@ Step by step:
    each supported branch and creates PRs.
 9. **Repeat**: After the patch PR merges, the tag reconciler creates the next
    patch tag and the cycle continues.
+
+## Mark EOL
+
+A CRI-O minor version reaches its end of life together with the corresponding
+[Kubernetes release](https://kubernetes.io/releases). Marking it EOL requires
+two changes:
+
+1. Remove the version from `ReleaseMinorVersions` in
+   [`internal/version/version.go`](https://github.com/cri-o/cri-o/blob/main/internal/version/version.go)
+   of CRI-O. The reconciler stops building prereleases for versions which are
+   not listed there anymore.
+2. [Run](https://github.com/cri-o/packaging/actions/workflows/mark-eol.yml) the
+   [`mark-eol.yml`](https://github.com/cri-o/packaging/blob/main/.github/workflows/mark-eol.yml)
+   workflow with the version to mark and optionally its tracking issue. It runs
+   [`scripts/mark-eol`](../scripts/mark-eol), which moves the OBS projects and
+   badges of the version into the end of life sections of the README, and opens
+   a pull request with the changes.
+
+Only the oldest supported version can be marked, and the script does not change
+anything if the version is already marked. It can also be run locally:
+
+```bash
+scripts/mark-eol v1.34
+```
 
 ## OBS Project Structure
 

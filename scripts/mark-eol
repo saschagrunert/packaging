@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+source "$(dirname "${BASH_SOURCE[0]}")"/helpers
+
+# Marks a CRI-O minor version as end of life in the README by moving its OBS
+# projects and badges into the corresponding end of life sections. Only the
+# oldest supported version can be marked, and running the script again for an
+# already marked version does nothing.
+#
+# Usage: scripts/mark-eol v1.y
+
+GIT_ROOT=$(git rev-parse --show-toplevel)
+README="$GIT_ROOT/README.md"
+
+oldest_supported() {
+    grep -oP 'badge/stable-v1\.\K[0-9]+(?=-brightgreen)' "$README" | sort -n | head -1
+}
+
+VERSION=${1:-}
+if [[ ! $VERSION =~ ^v ]]; then
+    VERSION="v$VERSION"
+fi
+if [[ ! $VERSION =~ ^v1\.[1-9][0-9]*$ ]]; then
+    echo "Usage: $0 v1.y" >&2
+    exit 1
+fi
+echo "Marking $VERSION as end of life"
+
+if [[ ${GITHUB_OUTPUT:-} != "" ]]; then
+    echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+fi
+
+if grep -q "badge/end%20of%20life-$VERSION-red" "$README"; then
+    echo "README already marks $VERSION as end of life, skipping"
+    exit 0
+fi
+
+if [[ "v1.$(oldest_supported)" != "$VERSION" ]]; then
+    echo "$VERSION is not the oldest supported version in the README" >&2
+    exit 1
+fi
+
+# Moves the matching block into the end of life section which has to follow
+# it directly, and applies the transformation to the moved block.
+VERSION=$VERSION perl -0777 -i -pe '
+    my $v = $ENV{VERSION};
+    (my $minor = $v) =~ s/^v//;
+    my $eol = "\n<details>\n<summary><b>End of life</b></summary>\n\n";
+    my $deprecated = "\n<details>\n<summary>Deprecated</summary>\n\n";
+
+    sub move {
+        my ($re, $anchor, $transform) = @_;
+        s/$re// or die "Unable to find README entry: $re\n";
+        my $pos = $-[0];
+        my $block = $1;
+        die "README entry is not followed by the expected section: $re\n"
+            if substr($_, $pos, length($anchor)) ne $anchor;
+        substr($_, $pos + length($anchor), 0) = $transform->($block);
+    }
+
+    my $dedent = sub { $_[0] =~ s/^  //mgr };
+    for my $kind ("stable", "prerelease") {
+        move(qr/^(  - \[`isv:cri-o:$kind:\Q$v\E`\].*\n    - \[`isv:cri-o:$kind:\Q$v\E:build`\].*\n)/m, $eol, $dedent);
+    }
+
+    move(qr/^(\[!\[\Q$v\E\]\(https:\/\/img\.shields\.io\/badge\/stable-\Q$v\E-brightgreen.*\n)/m,
+        $deprecated, sub { $_[0] =~ s/stable-\Q$v\E-brightgreen/end%20of%20life-$v-red/r });
+    move(qr/^(\[!\[release-\Q$minor\E\]\(https:\/\/img\.shields\.io\/badge\/prerelease-release--\Q$minor\E-blue.*\n)/m,
+        $deprecated, sub { $_[0] =~ s/prerelease-release--\Q$minor\E-blue/end%20of%20life-release--$minor-red/r });
+' "$README"

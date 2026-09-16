@@ -1,0 +1,55 @@
+name: mark-eol
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to mark as end of life (e.g. v1.34).
+        required: true
+        type: string
+      issue:
+        description: The tracking issue to close with the pull request (e.g. 335).
+        required: false
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+  mark-eol:
+    if: github.ref == 'refs/heads/main' && github.repository == 'cri-o/packaging'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: version
+        run: scripts/mark-eol "$VERSION"
+        env:
+          VERSION: ${{ inputs.version }}
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          commit-message: Mark ${{ steps.version.outputs.version }} EOL
+          title: Mark ${{ steps.version.outputs.version }} EOL
+          body: |
+            #### What type of PR is this?
+
+            /kind documentation
+
+            #### What this PR does / why we need it:
+
+            Mark ${{ steps.version.outputs.version }} EOL by moving its OBS projects and badges to the end of life sections in the README.
+
+            #### Which issue(s) this PR fixes:
+
+            ${{ inputs.issue && format('Fixes #{0}', inputs.issue) || 'None' }}
+
+            #### Does this PR introduce a user-facing change?
+
+            ```release-note
+            None
+            ```
+          labels: kind/documentation
+          branch: mark-eol-${{ steps.version.outputs.version }}
+          delete-branch: true
+          signoff: true
