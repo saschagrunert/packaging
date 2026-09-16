@@ -30,7 +30,7 @@ elif [[ "$REVISION" =~ ^release-[0-9]+\.[0-9]+$ ]]; then
 elif [[ "$REVISION" == "$CRIO_MAIN_BRANCH" ]]; then
     COMMIT=$(curl_retry https://storage.googleapis.com/cri-o/latest-$CRIO_MAIN_BRANCH.txt)
     PROJECT_VERSION=$CRIO_MAIN_BRANCH
-    VERSION=$(curl_retry https://raw.githubusercontent.com/cri-o/cri-o/main/internal/version/version.go | sed -n 's/^const Version = "\(.*\)"/\1-dev/p')
+    VERSION=$(curl_retry https://raw.githubusercontent.com/cri-o/cri-o/main/internal/version/version.go | sed -En 's/^(const|var) Version = "(.*)"/\2-dev/p')
     PROJECT_TYPE=prerelease
 else
     echo "Unsupported revision: $REVISION"
