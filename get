@@ -139,7 +139,7 @@ prepare() {
 prepare "$@"
 
 TARBALL=cri-o.$ARCH.$VERSION.tar.gz
-SPDX=$TARBALL.spdx
+SPDX=$TARBALL.spdx.json
 BASE_URL=$GCB_URL/artifacts
 
 TMPDIR="$(mktemp -d)"

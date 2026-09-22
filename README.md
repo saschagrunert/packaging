@@ -391,10 +391,10 @@ can be any git SHA or tag.
 
 We also provide a Software Bill of Materials (SBOM) in the [SPDX
 format](https://spdx.org) for each bundle. The SBOM is available at the same URL
-like the bundle itself, but suffixed with `.spdx`:
+like the bundle itself, but suffixed with `.spdx.json`:
 
 ```text
-https://storage.googleapis.com/cri-o/artifacts/cri-o.$ARCH.$REV.tar.gz.spdx
+https://storage.googleapis.com/cri-o/artifacts/cri-o.$ARCH.$REV.tar.gz.spdx.json
 ```
 
 An [OpenVEX](https://openvex.dev) vulnerability report and [SLSA](https://slsa.dev)
