@@ -121,6 +121,7 @@ install -D -m 644 -t %{buildroot}%{_mandir}/man8 %{archive_root}/man/crio.8
 # Binaries
 %{_bindir}/crio
 %{_bindir}/pinns
+%dir %{libexecdir}
 %dir %{libexecdir}/crio
 %{libexecdir}/crio/conmon
 %{libexecdir}/crio/conmonrs
